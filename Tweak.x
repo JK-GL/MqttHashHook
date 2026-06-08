@@ -3,22 +3,17 @@
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#include <CommonCrypto/CommonDigest.h>
 #include <substrate.h>
+#include <CommonCrypto/CommonDigest.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-
-static NSString *kKnownUsername = @"d4a107b765f38550d13a24b54fdcdecf";
-static NSString *kKnownPassword = @"7c039ddfbdad50f3d0caf974fbcd5a5f";
 
 // ============================================
 // MARK: - 日志管理器
 // ============================================
 
-@interface MqttHashLogManager : NSObject {
-    NSMutableArray *_logs;
-}
+@interface MqttHashLogManager : NSObject
 @property (nonatomic, strong) NSMutableArray *logs;
 @property (nonatomic, copy) void (^onNewLog)(NSString *log);
 + (instancetype)sharedInstance;
@@ -26,9 +21,6 @@ static NSString *kKnownPassword = @"7c039ddfbdad50f3d0caf974fbcd5a5f";
 @end
 
 @implementation MqttHashLogManager
-
-@synthesize logs = _logs;
-@synthesize onNewLog = _onNewLog;
 
 static MqttHashLogManager *_instance = nil;
 
@@ -48,9 +40,10 @@ static MqttHashLogManager *_instance = nil;
             [self.logs removeObjectAtIndex:0];
         }
     }
-    void (^block)(NSString *) = self.onNewLog;
-    if (block) {
-        block(log);
+    if (self.onNewLog) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.onNewLog(log);
+        });
     }
     NSLog(@"%@", log);
 }
@@ -69,7 +62,6 @@ static MqttHashLogManager *_instance = nil;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
     self.title = @"MQTT Hash Hook";
     self.view.backgroundColor = [UIColor blackColor];
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
@@ -101,9 +93,7 @@ static MqttHashLogManager *_instance = nil;
             @synchronized ([MqttHashLogManager sharedInstance].logs) {
                 strongSelf.logs = [[MqttHashLogManager sharedInstance].logs copy];
             }
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [strongSelf.tableView reloadData];
-            });
+            [strongSelf.tableView reloadData];
         }
     };
 }
@@ -161,7 +151,7 @@ static MqttHashLogManager *_instance = nil;
     
     if ([log containsString:@"✅ MATCH"]) {
         cell.textLabel.textColor = [UIColor systemGreenColor];
-        cell.backgroundColor = [[UIColor systemGreenColor] colorWithAlphaComponent:0.15];
+        cell.backgroundColor = [[UIColor systemGreenColor] colorWithAlphaComponent:0.2];
     } else if ([log containsString:@"[MD5]"]) {
         cell.textLabel.textColor = [UIColor systemBlueColor];
     } else if ([log containsString:@"[SHA256]"]) {
@@ -186,9 +176,9 @@ static MqttHashLogManager *_instance = nil;
 @interface MqttHashFloatingButton : UIView
 @property (nonatomic, strong) UIView *capsule;
 @property (nonatomic, strong) UILabel *statusLabel;
-@property (nonatomic, assign) NSUInteger hashCount;
 + (instancetype)shared;
 - (void)installIfNeeded;
+- (void)updateStatus:(NSString *)status;
 @end
 
 @implementation MqttHashFloatingButton
@@ -223,7 +213,7 @@ static MqttHashFloatingButton *_shared = nil;
         if (!window) return;
         
         CGFloat screenW = window.bounds.size.width;
-        CGFloat capsuleW = 100;
+        CGFloat capsuleW = 120;
         CGFloat capsuleH = 36;
         
         CGFloat capsuleY = 52;
@@ -242,16 +232,14 @@ static MqttHashFloatingButton *_shared = nil;
         [c addSubview:icon];
         
         _statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(28, 0, capsuleW - 36, capsuleH)];
-        _statusLabel.text = @"0";
+        _statusLabel.text = @"等待中";
         _statusLabel.textColor = [UIColor systemGreenColor];
-        _statusLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
+        _statusLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
         [c addSubview:_statusLabel];
         
-        // 点击
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openLog)];
         [c addGestureRecognizer:tap];
         
-        // 拖动
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [c addGestureRecognizer:pan];
         
@@ -260,10 +248,9 @@ static MqttHashFloatingButton *_shared = nil;
     });
 }
 
-- (void)incrementCount {
-    self.hashCount++;
+- (void)updateStatus:(NSString *)status {
     dispatch_async(dispatch_get_main_queue(), ^{
-        self->_statusLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.hashCount];
+        self->_statusLabel.text = status;
     });
 }
 
@@ -306,7 +293,18 @@ static MqttHashFloatingButton *_shared = nil;
 // MARK: - 检查 hash 结果
 // ============================================
 
-static void checkHashResult(const char *type, const void *inputData, CC_LONG inputLen, const uint8_t *digest, size_t digestLen) {
+static NSString *kKnownUsername = @"d4a107b765f38550d13a24b54fdcdecf";
+static NSString *kKnownPassword = @"7c039ddfbdad50f3d0caf974fbcd5a5f";
+static NSUInteger g_hashCount = 0;
+
+static void checkHashResult(const char *type, const void *inputBytes, CC_LONG inputLen, const uint8_t *digest, size_t digestLen) {
+    g_hashCount++;
+    
+    // 每 100 次更新一次计数
+    if (g_hashCount % 100 == 0) {
+        [[MqttHashFloatingButton shared] updateStatus:[NSString stringWithFormat:@"%lu", (unsigned long)g_hashCount]];
+    }
+    
     NSMutableString *hexString = [NSMutableString string];
     for (size_t i = 0; i < digestLen; i++) {
         [hexString appendFormat:@"%02x", digest[i]];
@@ -315,18 +313,16 @@ static void checkHashResult(const char *type, const void *inputData, CC_LONG inp
     BOOL matchUsername = [hexString isEqualToString:kKnownUsername];
     BOOL matchPassword = [hexString isEqualToString:kKnownPassword];
     
-    [[MqttHashFloatingButton shared] incrementCount];
-    
     if (matchUsername || matchPassword) {
         NSString *matchType = matchUsername ? @"Username" : @"Password";
         
-        NSData *inputNSData = [NSData dataWithBytes:inputData length:inputLen];
+        NSData *inputNSData = [NSData dataWithBytes:inputBytes length:inputLen];
         NSString *inputStr = [[NSString alloc] initWithData:inputNSData encoding:NSUTF8StringEncoding];
         if (!inputStr) inputStr = [inputNSData description];
         
         [[MqttHashLogManager sharedInstance] addLog:@"========================================"];
         [[MqttHashLogManager sharedInstance] addLog:[NSString stringWithFormat:@"[MQTT HASH] ✅ MATCH! %s = %@ (%@)", type, hexString, matchType]];
-        [[MqttHashLogManager sharedInstance] addLog:[NSString stringWithFormat:@"[MQTT HASH] 输入: %@ (长度:%d)", inputStr, inputLen]];
+        [[MqttHashLogManager sharedInstance] addLog:[NSString stringWithFormat:@"[MQTT HASH] 输入: %@ (长度:%u)", inputStr, inputLen]];
         [[MqttHashLogManager sharedInstance] addLog:@"[MQTT HASH] 堆栈:"];
         
         NSArray *callStack = [NSThread callStackSymbols];
@@ -336,6 +332,8 @@ static void checkHashResult(const char *type, const void *inputData, CC_LONG inp
             }
         }
         [[MqttHashLogManager sharedInstance] addLog:@"========================================"];
+        
+        [[MqttHashFloatingButton shared] updateStatus:@"✅ 找到!"];
     }
 }
 
@@ -345,7 +343,6 @@ static void checkHashResult(const char *type, const void *inputData, CC_LONG inp
 
 extern unsigned char *CC_MD5(const void *data, CC_LONG len, unsigned char *md);
 static unsigned char *(*orig_CC_MD5)(const void *data, CC_LONG len, unsigned char *md);
-
 static unsigned char *hook_CC_MD5(const void *data, CC_LONG len, unsigned char *md) {
     unsigned char *result = orig_CC_MD5(data, len, md);
     if (result) checkHashResult("MD5", data, len, result, CC_MD5_DIGEST_LENGTH);
@@ -354,7 +351,6 @@ static unsigned char *hook_CC_MD5(const void *data, CC_LONG len, unsigned char *
 
 extern unsigned char *CC_SHA256(const void *data, CC_LONG len, unsigned char *md);
 static unsigned char *(*orig_CC_SHA256)(const void *data, CC_LONG len, unsigned char *md);
-
 static unsigned char *hook_CC_SHA256(const void *data, CC_LONG len, unsigned char *md) {
     unsigned char *result = orig_CC_SHA256(data, len, md);
     if (result) {
@@ -366,11 +362,21 @@ static unsigned char *hook_CC_SHA256(const void *data, CC_LONG len, unsigned cha
 
 extern unsigned char *CC_SHA1(const void *data, CC_LONG len, unsigned char *md);
 static unsigned char *(*orig_CC_SHA1)(const void *data, CC_LONG len, unsigned char *md);
-
 static unsigned char *hook_CC_SHA1(const void *data, CC_LONG len, unsigned char *md) {
     unsigned char *result = orig_CC_SHA1(data, len, md);
     if (result) checkHashResult("SHA1[:16]", data, len, result, 16);
     return result;
+}
+
+// ============================================
+// MARK: - 显示 HUD
+// ============================================
+
+static void showHUDIfNeeded(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[MqttHashFloatingButton shared] installIfNeeded];
+        [[MqttHashFloatingButton shared] updateStatus:@"已启动"];
+    });
 }
 
 // ============================================
@@ -379,16 +385,22 @@ static unsigned char *hook_CC_SHA1(const void *data, CC_LONG len, unsigned char 
 
 %ctor {
     @autoreleasepool {
-        MSHookFunction(CC_MD5, hook_CC_MD5, (void **)&orig_CC_MD5);
-        MSHookFunction(CC_SHA256, hook_CC_SHA256, (void **)&orig_CC_SHA256);
-        MSHookFunction(CC_SHA1, hook_CC_SHA1, (void **)&orig_CC_SHA1);
-        
-        NSLog(@"[MQTT HASH HOOK] 🔐 Tweak 已加载！开始监控 hash 函数...");
-        [[MqttHashLogManager sharedInstance] addLog:@"[MQTT HASH HOOK] 🔐 已加载，开始监控 MD5/SHA256/SHA1"];
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [[MqttHashFloatingButton shared] installIfNeeded];
-        });
+        @try {
+            // Hook CommonCrypto
+            MSHookFunction(CC_MD5, hook_CC_MD5, (void **)&orig_CC_MD5);
+            MSHookFunction(CC_SHA256, hook_CC_SHA256, (void **)&orig_CC_SHA256);
+            MSHookFunction(CC_SHA1, hook_CC_SHA1, (void **)&orig_CC_SHA1);
+            
+            NSLog(@"[MQTT HASH HOOK] 🔐 Tweak 已加载！");
+            [[MqttHashLogManager sharedInstance] addLog:@"[MQTT HASH HOOK] 🔐 已加载，监控 MD5/SHA256/SHA1"];
+            
+            // 延迟显示悬浮按钮
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                showHUDIfNeeded();
+            });
+        } @catch (NSException *exception) {
+            NSLog(@"[MQTT HASH HOOK] ctor exception: %@ %@", exception.name, exception.reason);
+        }
     }
 }
 
