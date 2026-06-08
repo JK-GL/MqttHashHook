@@ -1,6 +1,7 @@
 // MqttHashHook.x
 // Hook CommonCrypto hash 函数，找 MQTT 凭据生成位置
 
+#import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #include <CommonCrypto/CommonDigest.h>
 #include <objc/runtime.h>
