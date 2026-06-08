@@ -158,7 +158,8 @@ static void exportLog(void) {
         logMsg(@"[MQTT HASH HOOK] 🔐 Tweak 已加载，开始监控 hash 函数...");
         
         // 每 30 秒自动导出日志
-        dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
+        dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+        dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
         dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW), 30 * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
         dispatch_source_set_event_handler(timer, ^{
             exportLog();
