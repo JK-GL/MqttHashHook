@@ -1,0 +1,9 @@
+Package: com.wuling.mqthashhook
+Name: MqttHashHook
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Hook CommonCrypto hash 函数，找 MQTT 凭据生成位置
+Maintainer: JK
+Author: JK
+Section: Tweaks
