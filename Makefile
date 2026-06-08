@@ -9,6 +9,5 @@ TWEAK_NAME = MqttHashHook
 MqttHashHook_FILES = Tweak.x
 MqttHashHook_CFLAGS = -fobjc-arc
 MqttHashHook_FRAMEWORKS = UIKit Foundation
-MqttHashHook_LIBRARIES = crypto
 
 include $(THEOS_MAKE_PATH)/tweak.mk
