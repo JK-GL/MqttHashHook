@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Install ldid
+        run: |
+          brew install ldid
+
+      - name: Build
+        run: |
+          export THEOS=theos
+          make package THEOS_PACKAGE_SCHEME=rootless
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tweak
+          path: |
+            .theos/_/obj/*.deb
+            .theos/_/packages/*.deb
+            packages/*.deb
+          if-no-files-found: warn
