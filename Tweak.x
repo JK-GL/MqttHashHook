@@ -160,7 +160,7 @@ static void exportLog(void) {
         // 每 30 秒自动导出日志
         dispatch_queue_t queue = dispatch_get_main_queue();
         dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
-        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW), 30 * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), 30 * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
         dispatch_source_set_event_handler(timer, ^{
             exportLog();
         });
