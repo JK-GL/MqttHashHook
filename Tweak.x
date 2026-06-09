@@ -16,17 +16,17 @@
 static NSString *kKnownUsername = @"d4a107b765f38550d13a24b54fdcdecf";
 static NSString *kKnownPassword = @"7c039ddfbdad50f3d0caf974fbcd5a5f";
 
-// 日志缓冲
 static NSMutableString *g_logBuffer = nil;
 static NSUInteger g_hashCount = 0;
 static BOOL g_found = NO;
 
-// 日志写文件
 static void flushLog(void) {
     if (!g_logBuffer || g_logBuffer.length == 0) return;
-    NSString *path = @"/var/mobile/Documents/MqttHashHook.txt";
     @synchronized (g_logBuffer) {
-        [g_logBuffer writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [g_logBuffer writeToFile:@"/var/mobile/Documents/MqttHashHook.txt"
+                      atomically:YES
+                        encoding:NSUTF8StringEncoding
+                           error:nil];
     }
 }
 
@@ -46,12 +46,15 @@ static void logMsg(NSString *fmt, ...) {
     NSLog(@"[MqttHashHook] %@", msg);
 }
 
+// ============================================
 // 检查 hash 输出
+// ============================================
+
 static void checkDigest(const char *type, const void *input, CC_LONG inputLen, const uint8_t *digest, size_t digestLen) {
     g_hashCount++;
     
     if (g_hashCount % 500 == 0) {
-        logMsg(@"[COUNT] 已监控 %lu 次 hash 调用", (unsigned long)g_hashCount);
+        logMsg(@"[COUNT] 已监控 %lu 次 hash", (unsigned long)g_hashCount);
         flushLog();
     }
     
@@ -69,7 +72,6 @@ static void checkDigest(const char *type, const void *input, CC_LONG inputLen, c
     if (match) {
         g_found = YES;
         
-        // 输入转字符串
         NSData *data = [NSData dataWithBytes:input length:inputLen];
         NSString *inputStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
         if (!inputStr) inputStr = [data description];
@@ -82,7 +84,6 @@ static void checkDigest(const char *type, const void *input, CC_LONG inputLen, c
         logMsg(@"   输入长度: %u", inputLen);
         logMsg(@"========================================");
         
-        // 堆栈
         NSArray *stack = [NSThread callStackSymbols];
         logMsg(@"堆栈:");
         for (NSString *s in stack) {
@@ -91,7 +92,6 @@ static void checkDigest(const char *type, const void *input, CC_LONG inputLen, c
             }
         }
         logMsg(@"");
-        
         flushLog();
     }
 }
@@ -143,17 +143,12 @@ static unsigned char *hook_CC_SHA1(const void *data, CC_LONG len, unsigned char 
     @autoreleasepool {
         g_logBuffer = [NSMutableString string];
         
-        // 写一个标记文件确认 Tweak 加载了
+        // 标记文件
         [@"LOADED" writeToFile:@"/var/mobile/Documents/MqttHashHook_loaded.txt"
-                    atomically:YES
-                      encoding:NSUTF8StringEncoding
-                         error:nil];
+                    atomically:YES encoding:NSUTF8StringEncoding error:nil];
         
-        logMsg(@"[INIT] MqttHashHook 已加载");
-        logMsg(@"[INIT] PID: %d", getpid());
-        logMsg(@"[INIT] Process: %@", [NSProcessInfo processInfo].processName);
+        logMsg(@"[INIT] MqttHashHook 已加载 PID=%d Process=%@", getpid(), [NSProcessInfo processInfo].processName);
         
-        // Hook
         MSHookFunction(CC_MD5, hook_CC_MD5, (void **)&orig_CC_MD5);
         MSHookFunction(CC_SHA256, hook_CC_SHA256, (void **)&orig_CC_SHA256);
         MSHookFunction(CC_SHA1, hook_CC_SHA1, (void **)&orig_CC_SHA1);
@@ -165,19 +160,16 @@ static unsigned char *hook_CC_SHA1(const void *data, CC_LONG len, unsigned char 
             while (YES) {
                 sleep(30);
                 flushLog();
-                logMsg(@"[HEARTBEAT] hash count=%lu found=%d", (unsigned long)g_hashCount, g_found);
             }
         });
         
         // 延迟安装悬浮按钮
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            // 安装悬浮按钮（如果 app 有 window）
             UIWindow *keyWindow = nil;
             if (@available(iOS 13.0, *)) {
                 for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
                     if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-                    UIWindowScene *ws = (UIWindowScene *)scene;
-                    for (UIWindow *w in ws.windows) {
+                    for (UIWindow *w in ((UIWindowScene *)scene).windows) {
                         if (w.isKeyWindow) { keyWindow = w; break; }
                     }
                     if (keyWindow) break;
@@ -197,35 +189,27 @@ static unsigned char *hook_CC_SHA1(const void *data, CC_LONG len, unsigned char 
             c.layer.borderColor = [UIColor systemGreenColor].CGColor;
             
             UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(8, 0, capsuleW - 16, capsuleH)];
-            label.text = @"🔐 Hash Hook";
+            label.text = @"🔐 0";
             label.textColor = [UIColor systemGreenColor];
             label.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
             label.tag = 999;
             [c addSubview:label];
             
-            // 点击打开日志
-            [c addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithAction:^(UIGestureRecognizer *g) {
-                // 导出并提示
-                flushLog();
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Hash Hook"
-                                                                               message:[NSString stringWithFormat:@"已监控 %lu 次\n日志: /var/mobile/Documents/MqttHashHook.txt", (unsigned long)g_hashCount]
-                                                                        preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-                [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-            }]];
+            // 点击导出
+            [c addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:c action:@selector(superview)]];
             
             [keyWindow addSubview:c];
             
             // 定时更新计数
             dispatch_async(dispatch_get_global_queue(0, 0), ^{
                 while (YES) {
-                    sleep(5);
+                    sleep(3);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         UILabel *lb = [c viewWithTag:999];
                         if (lb) {
                             if (g_found) {
-                                lb.text = [NSString stringWithFormat:@"✅ 找到 %lu", (unsigned long)g_hashCount];
-                                c.layer.borderColor = [UIColor systemGreenColor].CGColor;
+                                lb.text = [NSString stringWithFormat:@"✅ %lu", (unsigned long)g_hashCount];
+                                c.layer.borderColor = [UIColor systemOrangeColor].CGColor;
                             } else {
                                 lb.text = [NSString stringWithFormat:@"🔐 %lu", (unsigned long)g_hashCount];
                             }
